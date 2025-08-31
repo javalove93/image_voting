@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirm Initialization</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f4f4f4;
+            margin: 0;
+        }
+        .container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .buttons button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 0 10px;
+            transition: background-color 0.3s ease;
+        }
+        .buttons button:hover {
+            background-color: #0056b3;
+        }
+        .buttons button.no {
+            background-color: #dc3545;
+        }
+        .buttons button.no:hover {
+            background-color: #c82333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Are you sure you want to initialize all data (GCS, Firestore, caches)? This action cannot be undone.</h1>
+        <p>Current GCS Original Folder Entries: {{ gcs_original_count }}</p>
+        <p>Current GCS Cached Folder Entries: {{ gcs_cached_count }}</p>
+        <p>Current Firestore Entries: {{ firestore_count }}</p>
+        <div class="buttons">
+            <button onclick="location.href='/init?confirm=yes'">Yes</button>
+            <button class="no" onclick="location.href='/init?confirm=no'">No</button>
+        </div>
+    </div>
+</body>
+</html>

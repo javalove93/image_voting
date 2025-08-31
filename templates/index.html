@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>실시간 갤러리</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .modal {
+            display: none; 
+            position: fixed; 
+            z-index: 1; 
+            left: 0;
+            top: 0;
+            width: 100%; 
+            height: 100%; 
+            background-color: rgb(0,0,0); 
+            background-color: rgba(0,0,0,0.4); 
+        }
+
+        .modal-content {
+            background-color: #2c3e50;
+            margin: 5% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 500px; /* Default max-width for smaller modals */
+            border-radius: 10px;
+            max-height: 90vh; /* Limit height to enable scrolling */
+            overflow-y: auto; /* Add vertical scrollbar if content overflows */
+        }
+
+        .full-image-modal-content {
+            background-color: #2c3e50; /* Add background color */
+            border: 1px solid #888; /* Add border */
+            border-radius: 10px; /* Add border-radius */
+            max-width: 90vw; /* Max width of the modal should be 90% of viewport width */
+            max-height: 90vh; /* Max height of the modal should be 90% of viewport height */
+            padding: 10px; /* Adjust padding for full image */
+            margin: auto; /* Center the modal */
+            display: flex;
+            flex-direction: column; /* Stack image and description vertically */
+            align-items: center; /* Center items horizontally */
+            justify-content: center; /* Center items vertically */
+            overflow: hidden; /* Hide any overflowing content */
+        }
+
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .close:hover,
+        .close:focus {
+            color: white;
+            text-decoration: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>실시간 갤러리</h1>
+        <div class="buttons">
+            <button id="viewAllImagesBtn" class="btn btn-primary" style="background-color: #28a745;">전체 이미지 보기</button>
+            <button id="addImageBtn" class="btn btn-primary">이미지 추가</button>
+            <button id="viewRankingBtn" class="btn btn-secondary">🏆 랭킹 보기</button>
+        </div>
+    </div>
+
+    <div class="gallery" id="gallery">
+        <!-- Gallery items will be dynamically inserted here -->
+    </div>
+
+
+    <!-- Full Image View Modal -->
+    <div id="fullImageModal" class="modal">
+        <div class="full-image-modal-content">
+            <span class="close-full">&times;</span>
+            <img id="fullDisplayedImage" style="max-width: calc(90vw - 20px); max-height: calc(90vh - 20px - 30px); object-fit: contain; border-radius: 5px; cursor: pointer;">
+            <p id="fullDisplayedDescription" style="margin-top: 10px; color: #ecf0f1;"></p>
+        </div>
+    </div>
+
+    <!-- Ranking Modal -->
+    <div id="rankingModal" class="modal">
+        <div class="modal-content">
+            <span class="close-ranking">&times;</span>
+            <h2>🏆 Top 10 Liked Images</h2>
+            <div id="rankingImagesContainer" style="display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 20px;">
+                <!-- Ranking images will be dynamically inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- The Modal -->
+    <div id="uploadModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Upload Image</h2>
+            <form id="uploadForm" enctype="multipart/form-data">
+                <label for="image">Select Image:</label><br>
+                <input type="file" name="image" id="image" accept="image/*" style="margin-top: 10px;"><br><br>
+                <label for="description">Description:</label><br>
+                <textarea name="description" id="description" rows="4" cols="50" style="width: 100%; margin-top: 10px;"></textarea><br><br>
+                <input type="submit" value="Upload" class="btn btn-primary">
+            </form>
+            <div id="responseMessage" style="margin-top: 20px;"></div>
+        </div>
+    </div>
+
+    <script>
+        // Store UUIDs of liked images
+        const likedImageUUIDs = new Set();
+
+        // Upload Modal
+        var uploadModal = document.getElementById("uploadModal");
+        var addImageBtn = document.getElementById("addImageBtn");
+        var closeUpload = document.getElementsByClassName("close")[0];
+
+        addImageBtn.onclick = function() {
+            uploadModal.style.display = "block";
+        }
+        closeUpload.onclick = function() {
+            uploadModal.style.display = "none";
+        }
+
+        // Ranking Modal
+        var rankingModal = document.getElementById("rankingModal");
+        var viewRankingBtn = document.getElementById("viewRankingBtn");
+        var closeRanking = document.getElementsByClassName("close-ranking")[0];
+        var rankingImagesContainer = document.getElementById("rankingImagesContainer");
+
+        viewRankingBtn.onclick = async function() {
+            rankingImagesContainer.innerHTML = ''; // Clear previous content
+            try {
+                const response = await fetch('/images/top10_liked'); // New endpoint
+                const result = await response.json();
+
+                if (response.ok) {
+                    if (result.images && result.images.length > 0) {
+                        result.images.forEach((image, index) => {
+                            const rankingItem = document.createElement('div');
+                            rankingItem.className = 'gallery-item'; // Re-use gallery-item style
+                            rankingItem.style.width = '100%'; // Make each item take full width
+                            rankingItem.style.maxWidth = '200px'; /* Limit individual item width for better appearance */
+                            rankingItem.style.textAlign = 'center';
+                            rankingItem.style.margin = '0 auto'; /* Center the item itself */
+
+                            const rankNumber = document.createElement('p');
+                            rankNumber.textContent = `Rank ${index + 1}`;
+                            rankNumber.style.fontWeight = 'bold';
+                            rankNumber.style.color = '#f39c12'; // Gold-like color
+                            rankingItem.appendChild(rankNumber);
+
+                            const imgElement = document.createElement('img');
+                            imgElement.src = `data:${image.image_mimetype};base64,${image.image_data}`;
+                            imgElement.style.maxWidth = '100%';
+                            imgElement.style.height = 'auto';
+                            imgElement.style.borderRadius = '5px';
+                            imgElement.style.display = 'block';
+                            imgElement.style.cursor = 'pointer';
+                            imgElement.onclick = function() {
+                                openFullImageModal(image.image_data, image.image_mimetype, image.description);
+                            };
+                            rankingItem.appendChild(imgElement);
+
+                            const descriptionP = document.createElement('p');
+                            descriptionP.textContent = image.description;
+                            descriptionP.style.fontSize = '10px';
+                            descriptionP.style.color = '#ecf0f1';
+                            rankingItem.appendChild(descriptionP);
+
+                            const likesP = document.createElement('p');
+                            likesP.innerHTML = `❤ ${image.likes} likes`;
+                            likesP.style.fontSize = '12px';
+                            likesP.style.color = '#e74c3c';
+                            rankingItem.appendChild(likesP);
+
+                            rankingImagesContainer.appendChild(rankingItem);
+                        });
+                    } else {
+                        rankingImagesContainer.innerHTML = '<p style="color: #ecf0f1; text-align: center; width: 100%;">No images to rank yet.</p>';
+                    }
+                } else {
+                    rankingImagesContainer.innerHTML = `<p style="color: red; text-align: center; width: 100%;">Error: ${result.error}</p>`;
+                }
+            } catch (error) {
+                rankingImagesContainer.innerHTML = `<p style="color: red; text-align: center; width: 100%;">An error occurred: ${error.message}</p>`;
+            }
+            rankingModal.style.display = "block";
+        }
+
+        closeRanking.onclick = function() {
+            rankingModal.style.display = "none";
+        }
+
+        // When the user clicks anywhere outside of the modal, close it
+        window.onclick = function(event) {
+            if (event.target == uploadModal) {
+                uploadModal.style.display = "none";
+            }
+            if (event.target == fullImageModal) {
+                fullImageModal.style.display = "none";
+            }
+            if (event.target == rankingModal) {
+                rankingModal.style.display = "none";
+            }
+        }
+
+
+        document.getElementById('uploadForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+
+            const form = event.target;
+            const formData = new FormData(form);
+            const responseMessageDiv = document.getElementById('responseMessage');
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    responseMessageDiv.textContent = result.message + " UUID: " + result.uuid;
+                    responseMessageDiv.style.color = 'green';
+                    // Optionally, close the modal and refresh the gallery
+                    uploadModal.style.display = "none";
+                    // You would typically have a function to refresh the gallery here
+                    // e.g., fetchAndDisplayGallery();
+                } else {
+                    responseMessageDiv.textContent = 'Error: ' + result.error;
+                    responseMessageDiv.style.color = 'red';
+                }
+            } catch (error) {
+                responseMessageDiv.textContent = 'An error occurred: ' + error.message;
+                responseMessageDiv.style.color = 'red';
+            }
+        });
+
+        // Display All Images on Main Screen
+        var viewAllImagesBtn = document.getElementById("viewAllImagesBtn");
+        var galleryDiv = document.getElementById("gallery");
+
+        viewAllImagesBtn.onclick = async function() {
+            galleryDiv.innerHTML = ''; // Clear current gallery content
+            try {
+                const response = await fetch('/images/all');
+                const result = await response.json();
+
+                if (response.ok) {
+                    if (result.images && result.images.length > 0) {
+                        // Shuffle the images array
+                        for (let i = result.images.length - 1; i > 0; i--) {
+                            const j = Math.floor(Math.random() * (i + 1));
+                            [result.images[i], result.images[j]] = [result.images[j], result.images[i]];
+                        }
+
+                        result.images.forEach(image => {
+                            const galleryItem = document.createElement('div');
+                            galleryItem.className = 'gallery-item';
+
+                            const imagePlaceholder = document.createElement('div');
+                            imagePlaceholder.className = 'image-placeholder';
+                            imagePlaceholder.style.backgroundColor = '#5c8d89'; // You might want to randomize or remove this
+                            
+                            const imgElement = document.createElement('img');
+                            imgElement.src = `data:${image.image_mimetype};base64,${image.image_data}`;
+                            imgElement.style.maxWidth = '100%';
+                            imgElement.style.height = 'auto';
+                            imgElement.style.borderRadius = '5px';
+                            imgElement.style.display = 'block'; // Ensure image is visible
+                            imgElement.style.cursor = 'pointer'; // Indicate clickable
+                            imgElement.onclick = function() {
+                                openFullImageModal(image.image_data, image.image_mimetype, image.description);
+                            };
+
+                            imagePlaceholder.appendChild(imgElement);
+
+                            const descriptionDiv = document.createElement('div');
+                            descriptionDiv.className = 'description';
+
+                            const descP = document.createElement('p');
+                            descP.textContent = image.description;
+                            descP.style.fontSize = '10px'; // Maintain original font size
+
+                            const likesDiv = document.createElement('div');
+                            likesDiv.className = 'likes';
+                            likesDiv.innerHTML = `<span class="heart">❤</span> <span id="likes-count-${image.uuid}">${image.likes}</span>`; // Display actual likes with an ID
+
+                            const likeButton = document.createElement('button');
+                            likeButton.className = 'btn btn-sm btn-like';
+                            likeButton.textContent = 'Like';
+                            likeButton.onclick = function(event) { // Pass event object
+                                likeImage(image.uuid, event); // Pass event to likeImage
+                            };
+                            // Disable button if image was already liked in this session
+                            if (likedImageUUIDs.has(image.uuid)) {
+                                likeButton.disabled = true;
+                            }
+
+                            descriptionDiv.appendChild(descP);
+                            likesDiv.appendChild(likeButton); // Add the like button
+                            descriptionDiv.appendChild(likesDiv);
+
+                            galleryItem.appendChild(imagePlaceholder);
+                            galleryItem.appendChild(descriptionDiv);
+                            galleryDiv.appendChild(galleryItem);
+                        });
+                    } else {
+                        galleryDiv.innerHTML = '<p style="color: #ecf0f1; text-align: center; width: 100%;">업로드된 이미지가 없습니다.</p>';
+                    }
+                } else {
+                    galleryDiv.innerHTML = `<p style="color: red; text-align: center; width: 100%;">Error: ${result.error}</p>`;
+                }
+            } catch (error) {
+                galleryDiv.innerHTML = `<p style="color: red; text-align: center; width: 100%;">An error occurred: ${error.message}</p>`;
+            }
+        }
+
+        // Full Image Modal
+        var fullImageModal = document.getElementById("fullImageModal");
+        var closeFull = document.getElementsByClassName("close-full")[0];
+        var fullDisplayedImage = document.getElementById("fullDisplayedImage");
+        var fullDisplayedDescription = document.getElementById("fullDisplayedDescription");
+
+        function openFullImageModal(imageData, imageMimetype, description) {
+            fullDisplayedImage.src = `data:${imageMimetype};base64,${imageData}`;
+            fullDisplayedDescription.textContent = description;
+            fullImageModal.style.display = "block";
+        }
+
+        closeFull.onclick = function() {
+            fullImageModal.style.display = "none";
+            fullDisplayedImage.src = ''; // Clear image src
+            fullDisplayedDescription.textContent = ''; // Clear description
+        }
+
+        // Close full image modal when the image itself is clicked
+        fullDisplayedImage.onclick = function() {
+            fullImageModal.style.display = "none";
+            fullDisplayedImage.src = ''; // Clear image src
+            fullDisplayedDescription.textContent = ''; // Clear description
+        }
+
+        async function likeImage(uuid, event) { // Accept event object
+            const likeButton = event.target; // Get the button that was clicked
+            console.log('Like button clicked:', likeButton);
+            likeButton.disabled = true; // Disable the button immediately
+            console.log('Button disabled status:', likeButton.disabled);
+
+            try {
+                const response = await fetch('/like_image', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ uuid: uuid })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    const likesCountSpan = document.getElementById(`likes-count-${uuid}`);
+                    if (likesCountSpan) {
+                        likesCountSpan.textContent = result.new_likes;
+                    }
+                    console.log(`Image ${uuid} liked. New count: ${result.new_likes}`);
+                    likedImageUUIDs.add(uuid); // Add UUID to the set of liked images
+                } else {
+                    console.error('Error liking image:', result.error);
+                    likeButton.disabled = false; // Re-enable button on error
+                }
+            } catch (error) {
+                console.error('An error occurred while liking image:', error);
+                likeButton.disabled = false; // Re-enable button on error
+            }
+        }
+    </script>
+</body>
+</html>

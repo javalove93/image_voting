@@ -1,0 +1,5 @@
+Flask
+google-cloud-storage
+Pillow
+google-cloud-firestore
+gunicorn
