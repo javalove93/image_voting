@@ -12,6 +12,10 @@ import threading # Import threading for cache lock
 from google.cloud import firestore # Import firestore
 import subprocess # Import subprocess to run shell commands
 from googleapiclient import discovery # Import Google Sheets API v4
+from dotenv import load_dotenv # Import dotenv for loading .env file
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 app = Flask(__name__)
@@ -85,21 +89,33 @@ def require_password(f):
 # For Google Cloud Storage and Firestore, use default credentials from the environment
 # (service account associated with the deployment environment)
 storage_client = storage.Client()
-BUCKET_NAME = os.environ.get('GCS_BUCKET_NAME', 'jerry-argolis-bucket-asia-northeast3')
+
+# Environment variable validation
+BUCKET_NAME = os.environ.get('GCS_BUCKET_NAME')
+if not BUCKET_NAME:
+    raise ValueError("GCS_BUCKET_NAME environment variable is required")
+
+SHEET_ID = os.environ.get('GOOGLE_SHEETS_ID')
+if not SHEET_ID:
+    raise ValueError("GOOGLE_SHEETS_ID environment variable is required")
+
+TEAM_SHEET_ID = os.environ.get('TEAM_SHEETS_ID')
+if not TEAM_SHEET_ID:
+    raise ValueError("TEAM_SHEETS_ID environment variable is required")
+
+GOOGLE_SHEETS_CREDENTIALS_FILE = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+if not GOOGLE_SHEETS_CREDENTIALS_FILE:
+    raise ValueError("GOOGLE_APPLICATION_CREDENTIALS environment variable is required")
+
 GCS_FOLDER = "20250901" # The folder within the bucket for original images
 GCS_CACHED_FOLDER = "20250901_cached" # The folder for cached images in GCS
 LOCAL_CACHE_DIR = "/tmp/cached" # Local directory for caching images
 
 # Google Sheets configuration
-SHEET_ID = os.environ.get('GOOGLE_SHEETS_ID', '1ZM9PZ2tNDQHn8LyQ57QifY8MSgVnHiLv5I2SpNxMRpE')
 SHEET_RANGE = "Form Responses 1!A1:I999"  # Adjust range as needed
 
 # Team Sheets configuration
-TEAM_SHEET_ID = os.environ.get('TEAM_SHEETS_ID', '1BZnKykwL3yU5fOR_lhmuGi2vfWUwf2ytD6SfY2nqEKo')
 TEAM_SHEET_RANGE = "A2:Z999"  # The first row is comment that should be skipped
-
-# Google Sheets API credentials - only for Google Sheets access
-GOOGLE_SHEETS_CREDENTIALS_FILE = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', '../sa-key-251130-exp.json')
 
 
 
