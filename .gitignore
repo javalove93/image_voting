@@ -1,2 +1,54 @@
+# Cache directories
 cached/
-__pycache__
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Google Cloud credentials and keys
+sa-key-*.json
+*.json
+!requirements.json
+!package.json
+!tsconfig.json
+!tailwind.config.js
+!postcss.config.js
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.development
+
+# Logs
+*.log
+logs/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Docker
+.dockerignore
+
+# Local development
+.venv/
+venv/
+env/

@@ -26,7 +26,9 @@ DOCKER_IMAGE_TAG="${IMAGE_NAME}:latest" # Using 'latest' tag for simplicity
 
 # --- Build Docker Image Locally ---
 echo "Building Docker image locally: ${DOCKER_IMAGE_TAG}"
+cp ../sa-key-251130-exp.json sa-key-251130-exp.json
 docker build -t "${DOCKER_IMAGE_TAG}" .
+rm sa-key-251130-exp.json
 
 if [ $? -ne 0 ]; then
     echo "Local Docker image build failed. Exiting."

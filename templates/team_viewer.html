@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>팀 정보 뷰어</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Inter', 'Noto Sans KR', sans-serif; 
+        }
+        /* 간단한 애니메이션 효과 추가 */
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .team-card {
+            border-left: 4px solid #3B82F6;
+        }
+        .team-card:hover {
+            border-left-color: #1D4ED8;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-4 sm:p-6">
+    <div class="w-full max-w-6xl mx-auto">
+        <!-- 헤더 -->
+        <div class="text-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">팀 정보 뷰어</h1>
+            <p class="text-gray-600 mt-2">구글 AI 기반 스마트 애플리케이션 개발 프로젝트 팀</p>
+            <div class="mt-4">
+                <a href="/profile_viewer" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                    </svg>
+                    프로필 뷰어로 이동
+                </a>
+            </div>
+        </div>
+
+        <!-- 검색 필드 -->
+        <div class="mb-6 relative">
+            <span class="absolute inset-y-0 left-0 flex items-center pl-3">
+                <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
+                </svg>
+            </span>
+            <input type="text" id="searchInput" placeholder="팀 번호, 팀장 이름, 팀원 이름 등으로 검색..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <!-- 결과 표시 섹션 -->
+        <div id="resultContainer" class="min-h-[150px]">
+             <!-- 로딩 스피너 -->
+            <div id="loading" class="p-8 text-center">
+                <svg class="animate-spin h-8 w-8 text-blue-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="mt-4 text-gray-600">팀 데이터를 불러오는 중입니다...</p>
+            </div>
+            <!-- 오류 메시지 -->
+            <div id="error" class="hidden p-8 text-center bg-white rounded-lg shadow-md">
+                <p class="text-red-500 font-semibold"></p>
+            </div>
+            <!-- 카드 컨테이너 -->
+            <div id="cardContainer" class="hidden grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- 팀 카드가 여기에 삽입됩니다. -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM 요소 변수 선언
+        const cardContainer = document.getElementById('cardContainer');
+        const loadingDiv = document.getElementById('loading');
+        const errorDiv = document.getElementById('error');
+        const searchInput = document.getElementById('searchInput');
+        
+        // 비밀번호를 쿠키에서 가져오는 함수
+        function getPasswordFromCookie() {
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                const [name, value] = cookie.trim().split('=');
+                if (name === 'user_password') {
+                    return decodeURIComponent(value);
+                }
+            }
+            return '';
+        }
+
+        // 비밀번호를 쿠키에 저장하는 함수
+        function setPasswordCookie(password) {
+            document.cookie = `user_password=${encodeURIComponent(password)}; path=/; max-age=86400`; // 24시간 유효
+        }
+
+        // 비밀번호 입력 섹션을 표시하는 함수
+        function showPasswordSection() {
+            const resultContainer = document.getElementById('resultContainer');
+            resultContainer.innerHTML = `
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">비밀번호 입력</h3>
+                    <div class="space-y-4">
+                        <input type="password" id="passwordInput" placeholder="비밀번호를 입력하세요" 
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <button onclick="handlePasswordSubmit()" 
+                                class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            확인
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 비밀번호 제출 처리 함수
+        async function handlePasswordSubmit() {
+            const password = document.getElementById('passwordInput').value;
+            if (!password) {
+                alert('비밀번호를 입력해주세요.');
+                return;
+            }
+
+            setPasswordCookie(password);
+            // 페이지를 새로고침하여 데이터를 다시 로드
+            window.location.reload();
+        }
+
+        // 페이지 로드 시 자동으로 데이터 불러오기
+        window.addEventListener('DOMContentLoaded', handleLoadTeams);
+        // 검색 필드에 이벤트 리스너 추가
+        searchInput.addEventListener('input', handleSearch);
+
+        // 백엔드 API에서 팀 데이터를 불러오는 메인 함수
+        async function handleLoadTeams() {
+            showLoading();
+
+            try {
+                const savedPassword = getPasswordFromCookie();
+                if (!savedPassword) {
+                    showPasswordSection();
+                    return;
+                }
+
+                const response = await fetch(`/api/teams?password=${encodeURIComponent(savedPassword)}`);
+                if (!response.ok) { 
+                    if (response.status === 401) {
+                        showPasswordSection();
+                        return;
+                    }
+                    throw new Error(`데이터를 가져오는 데 실패했습니다 (상태 코드: ${response.status}).`); 
+                }
+
+                const data = await response.json();
+                
+                if (!data.headers || !data.teams || data.teams.length === 0) { 
+                    showError('표시할 팀 데이터가 없습니다.'); 
+                    return; 
+                }
+                
+                displayDataAsCards(data);
+
+            } catch (error) {
+                console.error('Fetch Error:', error);
+                if (error.message.includes('404')) {
+                    showError('API 엔드포인트를 찾을 수 없습니다 (404).');
+                } else if (error.message.includes('500')) {
+                    showError('서버 오류가 발생했습니다 (500). Google Sheets 접근 권한을 확인해주세요.');
+                } else if (error.message.includes('Failed to fetch')) {
+                     showError('네트워크 오류가 발생했습니다. 서버 연결을 확인해주세요.');
+                } else {
+                    showError(error.message);
+                }
+            }
+        }
+        
+        // 검색 기능을 처리하는 함수
+        function handleSearch() {
+            const searchTerm = searchInput.value.toLowerCase().trim();
+            const cards = cardContainer.querySelectorAll('.team-card');
+
+            cards.forEach(card => {
+                const valueElements = card.querySelectorAll('.searchable-value');
+                let searchableText = '';
+                valueElements.forEach(elem => {
+                    searchableText += elem.textContent.toLowerCase() + ' ';
+                });
+
+                if (searchableText.includes(searchTerm)) {
+                    card.style.display = ''; // 카드 보이기
+                } else {
+                    card.style.display = 'none'; // 카드 숨기기
+                }
+            });
+        }
+
+        // 파싱된 데이터를 카드 형식으로 표시하는 함수
+        function displayDataAsCards(data) {
+            const headers = data.headers;
+            const rows = data.teams;
+
+            // Since first row is comment, use fixed column positions
+            // Columns: 팀(조) 번호, 인원, 현재 실제 인원, 팀장, 팀장 학번, 팀원1, 팀원2, 팀원3, 팀원4, 팀원5, 주제 발표 일정, 주제는 여기
+            const teamNumberIndex = 0;  // First column is team number
+            const teamLeaderIndex = 3;   // Fourth column is team leader
+            const memberCountIndex = 1;  // Second column is member count
+            const currentMemberCountIndex = 2;  // Third column is current member count
+            const presentationDateIndex = 10;  // 11th column is presentation date
+            const topicIndex = 11;  // 12th column is topic
+            
+            cardContainer.innerHTML = ''; 
+
+            rows.forEach(row => {
+                console.log('Processing row:', row);
+                
+                // 행 길이 검사 제거 - 각 행의 길이가 다를 수 있음
+                if (!row || row.length === 0) {
+                    console.log('Skipping empty row');
+                    return;
+                }
+
+                const teamNumber = (row[teamNumberIndex] || '').trim();
+                const teamLeader = (teamLeaderIndex < row.length ? row[teamLeaderIndex] : '').trim();
+                const memberCount = (memberCountIndex < row.length ? row[memberCountIndex] : '').trim();
+                const currentMemberCount = (currentMemberCountIndex < row.length ? row[currentMemberCountIndex] : '').trim();
+                const presentationDate = (presentationDateIndex < row.length ? row[presentationDateIndex] : '').trim();
+                const topic = (topicIndex < row.length ? row[topicIndex] : '').trim();
+
+                console.log(`Team ${teamNumber} data:`, { teamNumber, teamLeader, memberCount, currentMemberCount, presentationDate, topic });
+
+                // 팀 번호가 있고 숫자인 경우만 표시
+                if (!teamNumber || !teamNumber.match(/^\d+$/)) {
+                    console.log(`Skipping team ${teamNumber} - invalid team number`);
+                    return;
+                }
+                
+                console.log(`Processing team ${teamNumber}:`, { teamLeader, memberCount, currentMemberCount, presentationDate, topic });
+
+                const card = document.createElement('div');
+                card.className = 'bg-white rounded-lg shadow-md p-6 transition-transform transform hover:-translate-y-1 fade-in team-card';
+
+                // 팀원 정보 수집 (팀원1~팀원5: 인덱스 5~9)
+                let teamMembers = [];
+                for (let i = 5; i <= 9; i++) {
+                    if (i < row.length && row[i] && row[i].trim() && row[i].trim() !== '') {
+                        teamMembers.push(row[i].trim());
+                    }
+                }
+                console.log(`Team ${teamNumber} members:`, teamMembers);
+
+                let detailsHtml = '<div class="mt-4 border-t border-gray-200 pt-4 space-y-3">';
+                
+                // 팀장 정보는 카드 헤더에 이미 표시되므로 본문에서는 제거
+
+                // 인원 정보
+                if (memberCount || currentMemberCount) {
+                    detailsHtml += `
+                        <div class="grid grid-cols-3 gap-4 text-sm">
+                            <p class="text-gray-500 font-medium col-span-1">인원</p>
+                            <div class="text-gray-800 col-span-2 searchable-value">
+                                ${currentMemberCount ? `현재: ${currentMemberCount}명` : ''}
+                                ${memberCount && currentMemberCount ? ' / ' : ''}
+                                ${memberCount ? `목표: ${memberCount}명` : ''}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // 발표 일정
+                if (presentationDate) {
+                    detailsHtml += `
+                        <div class="grid grid-cols-3 gap-4 text-sm">
+                            <p class="text-gray-500 font-medium col-span-1">발표 일정</p>
+                            <div class="text-gray-800 col-span-2 searchable-value">${presentationDate}</div>
+                        </div>
+                    `;
+                }
+
+                // 주제
+                if (topic) {
+                    detailsHtml += `
+                        <div class="grid grid-cols-3 gap-4 text-sm">
+                            <p class="text-gray-500 font-medium col-span-1">주제</p>
+                            <div class="text-gray-800 col-span-2 searchable-value">${topic}</div>
+                        </div>
+                    `;
+                }
+
+                // 팀원 목록
+                if (teamMembers.length > 0) {
+                    detailsHtml += `
+                        <div class="grid grid-cols-3 gap-4 text-sm">
+                            <p class="text-gray-500 font-medium col-span-1">팀원</p>
+                            <div class="text-gray-800 col-span-2 searchable-value">${teamMembers.join(', ')}</div>
+                        </div>
+                    `;
+                }
+
+                // 기타 정보들 (팀장 학번 등)
+                headers.forEach((header, index) => {
+                    // 행 길이를 초과하는 인덱스는 건너뛰기
+                    if (index >= row.length) return;
+                    
+                    const cellValue = (row[index] || '').trim();
+                    // 이미 처리한 컬럼들과 빈 값은 제외
+                    if (index !== teamNumberIndex && 
+                        index !== teamLeaderIndex && 
+                        index !== memberCountIndex && 
+                        index !== currentMemberCountIndex && 
+                        index !== presentationDateIndex && 
+                        index !== topicIndex && 
+                        (index < 5 || index > 9) && // 팀원 컬럼 제외 (인덱스 5~9)
+                        cellValue) {
+                        
+                        const formattedValue = cellValue.replace(/(https?:\/\/[^\s,]+)/g, '<a href="$1" target="_blank" class="text-blue-600 hover:underline break-all">$1</a>');
+                        
+                        detailsHtml += `
+                            <div class="grid grid-cols-3 gap-4 text-sm">
+                                <p class="text-gray-500 font-medium col-span-1">${header.trim()}</p>
+                                <div class="text-gray-800 col-span-2 whitespace-pre-wrap break-words searchable-value">${formattedValue}</div>
+                            </div>
+                        `;
+                    }
+                });
+                detailsHtml += '</div>';
+
+                card.innerHTML = `
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-800 searchable-value">팀 ${teamNumber}</h3>
+                        <p class="text-lg text-blue-600 font-semibold mt-1 searchable-value">팀장: ${teamLeader || ''}</p>
+                    </div>
+                    ${detailsHtml}
+                `;
+                cardContainer.appendChild(card);
+                console.log(`Added card for team ${teamNumber}`);
+            });
+            
+            showResults();
+        }
+
+        // --- UI 상태 관리 함수들 ---
+        function showLoading() {
+            loadingDiv.classList.remove('hidden');
+            errorDiv.classList.add('hidden');
+            cardContainer.classList.add('hidden');
+        }
+
+        function showError(message) {
+            errorDiv.querySelector('p').textContent = message;
+            errorDiv.classList.remove('hidden');
+            loadingDiv.classList.add('hidden');
+            cardContainer.classList.add('hidden');
+        }
+
+        function showResults() {
+            cardContainer.classList.remove('hidden');
+            loadingDiv.classList.add('hidden');
+            errorDiv.classList.add('hidden');
+        }
+    </script>
+</body>
+</html>

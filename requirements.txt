@@ -3,3 +3,6 @@ google-cloud-storage
 Pillow
 google-cloud-firestore
 gunicorn
+google-api-python-client 
+oauth2client
+google-auth

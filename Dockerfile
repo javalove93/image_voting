@@ -6,6 +6,7 @@ WORKDIR /app
 
 # Copy the requirements file into the container
 COPY requirements.txt .
+COPY sa-key-251130-exp.json .
 
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
@@ -17,6 +18,7 @@ COPY . .
 # Cloud Run typically expects applications to listen on port 8080
 ENV PORT 8080
 EXPOSE $PORT
+ENV GOOGLE_APPLICATION_CREDENTIALS /app/sa-key-251130-exp.json
 
 # Run the application using Gunicorn with 1 worker and 5 threads to match Cloud Run's concurrency
 # Assuming app.py contains the Flask application instance named 'app'

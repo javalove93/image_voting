@@ -11,6 +11,8 @@ from PIL import ImageOps # Import ImageOps for EXIF transpose
 import threading # Import threading for cache lock
 from google.cloud import firestore # Import firestore
 import subprocess # Import subprocess to run shell commands
+from googleapiclient import discovery # Import Google Sheets API v4
+
 
 app = Flask(__name__)
 
@@ -24,19 +26,82 @@ image_uuid_cache = {"data": {}, "timestamp": datetime.min}
 # This cache will store a dictionary of {uuid: {likes: count, timestamp: datetime}}
 image_likes_cache = {"data": {}, "timestamp": datetime.min}
 
+# In-memory cache for Google Sheets profile data
+# This cache will store profile data with timestamp
+profile_cache = {"data": None, "timestamp": datetime.min}
+
+# In-memory cache for Google Sheets team data
+# This cache will store team data with timestamp
+team_cache = {"data": None, "timestamp": datetime.min}
+
 CACHE_EXPIRATION_SECONDS = 2
+PROFILE_CACHE_EXPIRATION_SECONDS = 300  # 5 minutes for profile data
+TEAM_CACHE_EXPIRATION_SECONDS = 300  # 5 minutes for team data
 cache_lock = threading.Lock() # Lock for thread-safe cache access
 
+def require_password(f):
+    """Decorator to require password authentication for API endpoints."""
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Get password from URL parameter
+        password = request.args.get('password')
+        
+        if not password:
+            return jsonify({"error": "Password required"}), 401
+        
+        try:
+            # Verify password from Firestore - search for student account
+            try:
+                credentials_ref = db.collection('credentials')
+                query = credentials_ref.where('account', '==', 'student')
+                docs = query.get()
+                
+                if not docs:
+                    return jsonify({"error": "Student credentials not found"}), 404
+                
+                # Get the first matching document
+                doc = docs[0]
+                doc_data = doc.to_dict()
+                stored_password = doc_data.get('password')
+                
+                if password != stored_password:
+                    return jsonify({"error": "Invalid password"}), 401
+            except Exception as firestore_error:
+                print(f"{datetime.now().strftime('%H:%M:%S')} ERROR: Firestore access failed: {firestore_error}", flush=True)
+                return jsonify({"error": "Authentication service unavailable"}), 500
+                
+        except Exception as e:
+            print(f"{datetime.now().strftime('%H:%M:%S')} ERROR: Password verification failed: {e}", flush=True)
+            import traceback
+            print(f"{datetime.now().strftime('%H:%M:%S')} EXCEPTION TRACEBACK:", flush=True)
+            print(traceback.format_exc(), flush=True)
+            return jsonify({"error": "Authentication failed"}), 500
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
 # Configure Google Cloud Storage
-# Ensure GOOGLE_APPLICATION_CREDENTIALS environment variable is set
-# or provide credentials explicitly.
-# For local development, you might use a service account key file.
-# For deployment on Google Cloud, it will use the service account associated with the environment.
+# For Google Cloud Storage and Firestore, use default credentials from the environment
+# (service account associated with the deployment environment)
 storage_client = storage.Client()
-BUCKET_NAME = "jerry-argolis-bucket-asia-northeast3"
+BUCKET_NAME = os.environ.get('GCS_BUCKET_NAME', 'jerry-argolis-bucket-asia-northeast3')
 GCS_FOLDER = "20250901" # The folder within the bucket for original images
 GCS_CACHED_FOLDER = "20250901_cached" # The folder for cached images in GCS
 LOCAL_CACHE_DIR = "/tmp/cached" # Local directory for caching images
+
+# Google Sheets configuration
+SHEET_ID = os.environ.get('GOOGLE_SHEETS_ID', '1ZM9PZ2tNDQHn8LyQ57QifY8MSgVnHiLv5I2SpNxMRpE')
+SHEET_RANGE = "Form Responses 1!A1:I999"  # Adjust range as needed
+
+# Team Sheets configuration
+TEAM_SHEET_ID = os.environ.get('TEAM_SHEETS_ID', '1BZnKykwL3yU5fOR_lhmuGi2vfWUwf2ytD6SfY2nqEKo')
+TEAM_SHEET_RANGE = "A2:Z999"  # The first row is comment that should be skipped
+
+# Google Sheets API credentials - only for Google Sheets access
+GOOGLE_SHEETS_CREDENTIALS_FILE = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', '../sa-key-251130-exp.json')
+
+
 
 @app.route('/')
 def index():
@@ -516,6 +581,256 @@ def initialize_data():
         print(f"{datetime.now().strftime('%H:%M:%S')} ERROR: Initialization failed: {e}", flush=True)
         return jsonify({"error": str(e)}), 500
 
+def get_profile_data_from_sheets():
+    """
+    Retrieves profile data from Google Sheets with caching using Google Sheets API v4.
+    """
+    global profile_cache
+    with cache_lock:
+        # Check if cache is still valid
+        if (datetime.now() - profile_cache["timestamp"]).total_seconds() < PROFILE_CACHE_EXPIRATION_SECONDS and profile_cache["data"] is not None:
+            print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: Using cached profile data.", flush=True)
+            return profile_cache["data"]
+
+        print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: Cache expired or not set. Fetching profile data from Google Sheets.", flush=True)
+        
+        try:
+            # Import service account credentials for Google Sheets API only
+            from google.oauth2 import service_account
+            
+            # Load credentials from file for Google Sheets API
+            credentials = service_account.Credentials.from_service_account_file(
+                GOOGLE_SHEETS_CREDENTIALS_FILE,
+                scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
+            )
+            
+            # Build Google Sheets API service
+            discovery_url = ('https://sheets.googleapis.com/$discovery/rest?version=v4')
+            service = discovery.build('sheets', 'v4', credentials=credentials, discoveryServiceUrl=discovery_url)
+            
+            print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: Using Google Sheets API v4 with credentials from {GOOGLE_SHEETS_CREDENTIALS_FILE}", flush=True)
+            
+            # Get spreadsheet data
+            result = service.spreadsheets().values().get(
+                spreadsheetId=SHEET_ID, 
+                range=SHEET_RANGE, 
+                majorDimension='ROWS'
+            ).execute()
+            
+            all_values = result.get('values', [])
+            
+            if not all_values or len(all_values) < 2:
+                print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: No data found in Google Sheets.", flush=True)
+                return {"headers": [], "profiles": []}
+            
+            # First row contains headers
+            headers = all_values[0]
+            # Rest of the rows contain profile data
+            profiles = all_values[1:]
+            
+            # Filter out empty rows
+            profiles = [profile for profile in profiles if any(cell.strip() for cell in profile)]
+            
+            profile_data = {
+                "headers": headers,
+                "profiles": profiles
+            }
+            
+            # Update cache
+            profile_cache["data"] = profile_data
+            profile_cache["timestamp"] = datetime.now()
+            print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: Profile data cache updated.", flush=True)
+            
+            return profile_data
+            
+        except Exception as e:
+            print(f"{datetime.now().strftime('%H:%M:%S')} ERROR: Failed to fetch profile data from Google Sheets: {e}", flush=True)
+            import traceback
+            print(f"{datetime.now().strftime('%H:%M:%S')} EXCEPTION TRACEBACK:", flush=True)
+            print(traceback.format_exc(), flush=True)
+            # Return cached data if available, otherwise empty data
+            if profile_cache["data"] is not None:
+                return profile_cache["data"]
+            return {"headers": [], "profiles": []}
+
+def get_team_data_from_sheets():
+    """
+    Fetch team data from Google Sheets with caching.
+    Returns a dictionary with 'headers' and 'teams' keys.
+    """
+    global team_cache
+    with cache_lock:
+        # Check if cache is still valid
+        if (datetime.now() - team_cache["timestamp"]).total_seconds() < TEAM_CACHE_EXPIRATION_SECONDS and team_cache["data"] is not None:
+            print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: Using cached team data.", flush=True)
+            return team_cache["data"]
+
+        print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: Cache expired or not set. Fetching team data from Google Sheets.", flush=True)
+        
+        try:
+            # Import service account credentials for Google Sheets API only
+            from google.oauth2 import service_account
+            
+            # Load credentials from file for Google Sheets API
+            credentials = service_account.Credentials.from_service_account_file(
+                GOOGLE_SHEETS_CREDENTIALS_FILE,
+                scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
+            )
+            
+            # Build Google Sheets API service
+            discovery_url = ('https://sheets.googleapis.com/$discovery/rest?version=v4')
+            service = discovery.build('sheets', 'v4', credentials=credentials, discoveryServiceUrl=discovery_url)
+            
+            print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: Using Google Sheets API v4 with credentials from {GOOGLE_SHEETS_CREDENTIALS_FILE}", flush=True)
+            
+            # Get spreadsheet data
+            result = service.spreadsheets().values().get(
+                spreadsheetId=TEAM_SHEET_ID, 
+                range=TEAM_SHEET_RANGE, 
+                majorDimension='ROWS'
+            ).execute()
+            
+            all_values = result.get('values', [])
+            
+            if not all_values or len(all_values) < 2:
+                print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: No team data found in Google Sheets.", flush=True)
+                return {"headers": [], "teams": []}
+            
+            # First row contains headers
+            headers = all_values[0]
+            # Rest of the rows contain team data
+            teams = all_values[1:]
+            
+            # Since first row is comment, assume column positions
+            # Based on the API response, columns are: 팀(조) 번호, 인원, 현재 실제 인원, 팀장, 팀장 학번, 팀원1, 팀원2, 팀원3, 팀원4, 팀원5, 주제 발표 일정, 주제는 여기
+            team_number_index = 0  # First column is team number
+            team_leader_index = 3   # Fourth column is team leader
+            
+            # Filter teams that have a valid team number
+            filtered_teams = []
+            for team in teams:
+                if len(team) > team_number_index and team[team_number_index].strip():
+                    # Check if team number is a valid number
+                    team_number = team[team_number_index].strip()
+                    if team_number.isdigit() and int(team_number) > 0:
+                        filtered_teams.append(team)
+            
+            teams = filtered_teams
+            
+            print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: Found {len(teams)} teams with valid team numbers.", flush=True)
+            for team in teams:
+                if len(team) > team_number_index:
+                    print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: Team {team[team_number_index]} found", flush=True)
+            
+            team_data = {
+                "headers": headers,
+                "teams": teams
+            }
+            
+            # Update cache
+            team_cache["data"] = team_data
+            team_cache["timestamp"] = datetime.now()
+            print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: Team data cache updated.", flush=True)
+            
+            return team_data
+            
+        except Exception as e:
+            print(f"{datetime.now().strftime('%H:%M:%S')} ERROR: Failed to fetch team data from Google Sheets: {e}", flush=True)
+            import traceback
+            print(f"{datetime.now().strftime('%H:%M:%S')} EXCEPTION TRACEBACK:", flush=True)
+            print(traceback.format_exc(), flush=True)
+            # Return cached data if available, otherwise empty data
+            if team_cache["data"] is not None:
+                return team_cache["data"]
+            return {"headers": [], "teams": []}
+
+@app.route('/profile_viewer')
+def profile_viewer():
+    """Route to serve the profile viewer HTML page."""
+    return render_template('profile_viewer.html')
+
+@app.route('/team_viewer')
+def team_viewer():
+    """Route to serve the team viewer HTML page."""
+    return render_template('team_viewer.html')
+
+@app.route('/api/profiles')
+@require_password
+def get_profiles():
+    """API endpoint to get profile data from Google Sheets."""
+    print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: get_profiles called", flush=True)
+    try:
+        profile_data = get_profile_data_from_sheets()
+        return jsonify(profile_data), 200
+    except Exception as e:
+        print(f"{datetime.now().strftime('%H:%M:%S')} ERROR: get_profiles failed: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/verify_password', methods=['POST'])
+def verify_password():
+    """API endpoint to verify password from Firestore."""
+    print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: verify_password called", flush=True)
+    try:
+        data = request.get_json()
+        password = data.get('password')
+        
+        if not password:
+            return jsonify({"error": "Password is required"}), 400
+        
+        # Get password from Firestore - search for student account
+        try:
+            credentials_ref = db.collection('credentials')
+            query = credentials_ref.where('account', '==', 'student')
+            docs = query.get()
+            
+            if not docs:
+                return jsonify({"error": "Student credentials not found"}), 404
+            
+            # Get the first matching document
+            doc = docs[0]
+            doc_data = doc.to_dict()
+            stored_password = doc_data.get('password')
+            
+            if password == stored_password:
+                return jsonify({"success": True, "message": "Password verified"}), 200
+            else:
+                return jsonify({"error": "Invalid password"}), 401
+        except Exception as firestore_error:
+            print(f"{datetime.now().strftime('%H:%M:%S')} ERROR: Firestore access failed: {firestore_error}", flush=True)
+            return jsonify({"error": "Authentication service unavailable"}), 500
+            
+    except Exception as e:
+        print(f"{datetime.now().strftime('%H:%M:%S')} ERROR: verify_password failed: {e}", flush=True)
+        import traceback
+        print(f"{datetime.now().strftime('%H:%M:%S')} EXCEPTION TRACEBACK:", flush=True)
+        print(traceback.format_exc(), flush=True)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/teams')
+@require_password
+def get_teams():
+    """API endpoint to get team data from Google Sheets."""
+    print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: get_teams called", flush=True)
+    try:
+        team_data = get_team_data_from_sheets()
+        return jsonify(team_data), 200
+    except Exception as e:
+        print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: get_teams failed: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
 # Ensure the local cache directory exists for temporary files
 if not os.path.exists(LOCAL_CACHE_DIR):
     os.makedirs(LOCAL_CACHE_DIR)
+
+# WSGI application entry point
+application = app
+
+# Command line execution
+if __name__ == '__main__':
+    # Development server configuration
+    app.run(
+        host='0.0.0.0',  # Allow external connections
+        port=5000,       # Default Flask port
+        debug=True,      # Enable debug mode for development
+        threaded=True    # Enable threading for concurrent requests
+    )
