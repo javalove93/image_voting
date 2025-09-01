@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source .env
+
 # This script builds the Docker image and deploys it to Google Cloud Run.
 
 # --- Configuration ---
@@ -15,7 +17,7 @@ SERVICE_NAME="image-voting-app"
 ARTIFACT_REGISTRY_LOCATION="${REGION}"
 # Artifact Registry repository name (e.g., 'my-docker-repo')
 # You need to create this repository in Artifact Registry if it doesn't exist.
-ARTIFACT_REGISTRY_REPOSITORY="jerry" # You can change this name
+#ARTIFACT_REGISTRY_REPOSITORY=
 
 # Image name for Google Artifact Registry
 IMAGE_NAME="${ARTIFACT_REGISTRY_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REGISTRY_REPOSITORY}/${SERVICE_NAME}"
