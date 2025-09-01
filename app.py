@@ -413,6 +413,32 @@ def get_top10_liked_images():
 def initialize_data():
     print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: initialize_data called", flush=True)
     confirm = request.args.get('confirm')
+    password = request.args.get('password')
+
+    # Check password if provided
+    if password:
+        try:
+            # Get admin credentials from Firestore
+            admin_docs = db.collection("credentials").where("account", "==", "admin").limit(1).stream()
+            admin_doc = None
+            for doc in admin_docs:
+                admin_doc = doc
+                break
+            
+            if not admin_doc:
+                return jsonify({"error": "Admin credentials not found in Firestore"}), 401
+            
+            stored_password = admin_doc.to_dict().get("password")
+            if not stored_password:
+                return jsonify({"error": "Password field not found in admin credentials"}), 401
+            
+            if password != stored_password:
+                return jsonify({"error": "Invalid password"}), 401
+                
+            print(f"{datetime.now().strftime('%H:%M:%S')} DEBUG: Password verification successful", flush=True)
+        except Exception as e:
+            print(f"{datetime.now().strftime('%H:%M:%S')} ERROR: Password verification failed: {e}", flush=True)
+            return jsonify({"error": f"Password verification failed: {e}"}), 500
 
     if confirm is None:
         try:

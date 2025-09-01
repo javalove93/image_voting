@@ -45,6 +45,21 @@
         .buttons button.no:hover {
             background-color: #c82333;
         }
+        .password-field {
+            margin: 20px 0;
+        }
+        .password-field input {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            width: 200px;
+        }
+        .error-message {
+            color: #dc3545;
+            margin-top: 10px;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -53,10 +68,39 @@
         <p>Current GCS Original Folder Entries: {{ gcs_original_count }}</p>
         <p>Current GCS Cached Folder Entries: {{ gcs_cached_count }}</p>
         <p>Current Firestore Entries: {{ firestore_count }}</p>
+        
+        <div class="password-field">
+            <label for="password">Admin Password:</label><br>
+            <input type="password" id="password" placeholder="Enter admin password" required>
+            <div class="error-message" id="error-message">Password is required</div>
+        </div>
+        
         <div class="buttons">
-            <button onclick="location.href='/init?confirm=yes'">Yes</button>
+            <button onclick="confirmInit()">Yes</button>
             <button class="no" onclick="location.href='/init?confirm=no'">No</button>
         </div>
     </div>
+    
+    <script>
+        function confirmInit() {
+            const password = document.getElementById('password').value.trim();
+            const errorMessage = document.getElementById('error-message');
+            
+            if (!password) {
+                errorMessage.style.display = 'block';
+                return;
+            }
+            
+            errorMessage.style.display = 'none';
+            location.href = `/init?password=${encodeURIComponent(password)}&confirm=yes`;
+        }
+        
+        // Allow Enter key to submit
+        document.getElementById('password').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                confirmInit();
+            }
+        });
+    </script>
 </body>
 </html>
