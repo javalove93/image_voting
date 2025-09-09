@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>터치 드로잉 앱</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8;
+            color: #1a202c;
+            /* Remove default margin/padding and enable full screen */
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        canvas {
+            /* Full-screen canvas */
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            touch-action: none;
+            background-color: #ffffff; /* White background */
+            z-index: -1;
+        }
+        .controls {
+            /* Position controls at the bottom center */
+            position: fixed;
+            bottom: 0.5rem; /* Reduced bottom margin */
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: row; /* Changed to row for horizontal layout */
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem; /* Gap reduced */
+            padding: 0; /* Padding removed */
+            background-color: transparent; /* Background removed */
+            backdrop-filter: none; /* Backdrop filter removed */
+            border-radius: 0;
+            box-shadow: none;
+            z-index: 10;
+        }
+        .control-button {
+            padding: 0.75rem 2.5rem;
+            font-weight: 500;
+            border-radius: 9999px;
+            transition: transform 0.1s, box-shadow 0.1s;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            min-width: 120px;
+            font-size: 0.9rem;
+        }
+        .control-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px -1px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        #clear-button {
+            background-color: #e53e3e;
+            color: white;
+        }
+        #ai-button {
+            background-color: #4299e1;
+            color: white;
+        }
+        #upload-button {
+            background-color: #38a169;
+            color: white;
+        }
+        .prediction-box {
+            position: fixed;
+            top: 0.5rem; /* Reduced top margin */
+            right: 0.5rem; /* Reduced right margin */
+            padding: 1rem;
+            background-color: transparent;
+            z-index: 100;
+            text-align: center;
+            max-width: 250px;
+        }
+        .ranking-button {
+            position: fixed;
+            top: 0.5rem;
+            left: 0.5rem;
+            padding: 0.5rem 1rem;
+            background-color: #f39c12;
+            color: white;
+            border: none;
+            border-radius: 9999px;
+            font-weight: 500;
+            font-size: 0.9rem;
+            cursor: pointer;
+            z-index: 100;
+            transition: transform 0.1s, box-shadow 0.1s;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .ranking-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px -1px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .clear-api-button {
+            position: fixed;
+            top: 4rem; /* Position below ranking button */
+            left: 0.5rem; /* Same left position as ranking button */
+            padding: 0.5rem 1rem;
+            background-color: #e53e3e;
+            color: white;
+            border: none;
+            border-radius: 9999px;
+            font-weight: 500;
+            font-size: 0.9rem;
+            cursor: pointer;
+            z-index: 100;
+            transition: transform 0.1s, box-shadow 0.1s;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .clear-api-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px -1px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .prediction-text {
+            font-weight: bold;
+            color: #ff0000;
+            font-size: 1rem; /* Font size reduced by half */
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 2s linear infinite;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 200;
+            display: none;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="drawing-canvas"></canvas>
+    
+    <!-- Ranking button in top left corner -->
+    <button id="ranking-button" class="ranking-button">🏆 랭킹</button>
+    
+    <!-- Clear API Key button next to ranking button -->
+    <button id="clear-api-button" class="clear-api-button">Clear</button>
+    
+    <div class="controls">
+        <button id="clear-button" class="control-button">지우기</button>
+        <button id="ai-button" class="control-button">AI</button>
+        <button id="upload-button" class="control-button">업로드</button>
+    </div>
+
+    <!-- AI 예측 결과 표시를 위한 영역 -->
+    <div id="prediction-box" class="prediction-box">
+        <span class="prediction-text" id="prediction-text">그림을 그리면 AI가 예측해요!</span>
+    </div>
+    
+    <div class="loader" id="loader"></div>
+
+    <!-- API Key Input Modal -->
+    <div id="api-key-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 2rem; border-radius: 1rem; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+            <h3 style="margin: 0 0 1rem 0; color: #1a202c;">Gemini API 키 입력</h3>
+            <input type="password" id="api-key-input" placeholder="API 키를 입력하세요" style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.5rem; margin-bottom: 1rem; box-sizing: border-box;">
+            <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                <button id="save-api-key" style="padding: 0.5rem 1rem; background-color: #4299e1; color: white; border: none; border-radius: 0.5rem; cursor: pointer;">저장</button>
+                <button id="cancel-api-key" style="padding: 0.5rem 1rem; background-color: #6b7280; color: white; border: none; border-radius: 0.5rem; cursor: pointer;">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('drawing-canvas');
+        const ctx = canvas.getContext('2d');
+        const clearButton = document.getElementById('clear-button');
+        const aiButton = document.getElementById('ai-button');
+        const uploadButton = document.getElementById('upload-button');
+        const rankingButton = document.getElementById('ranking-button');
+        const clearApiButton = document.getElementById('clear-api-button');
+        const predictionTextElement = document.getElementById('prediction-text');
+        const loaderElement = document.getElementById('loader');
+        
+        // API Key modal elements
+        const apiKeyModal = document.getElementById('api-key-modal');
+        const apiKeyInput = document.getElementById('api-key-input');
+        const saveApiKeyButton = document.getElementById('save-api-key');
+        const cancelApiKeyButton = document.getElementById('cancel-api-key');
+        
+        // API Key management
+        const API_KEY_STORAGE = 'gemini_api_key';
+        
+        function getApiKey() {
+            return localStorage.getItem(API_KEY_STORAGE);
+        }
+        
+        function setApiKey(key) {
+            localStorage.setItem(API_KEY_STORAGE, key);
+        }
+        
+        function clearApiKey() {
+            localStorage.removeItem(API_KEY_STORAGE);
+            showApiKeyModal(); // Show the API key modal after clearing
+        }
+        
+        function showApiKeyModal() {
+            apiKeyModal.style.display = 'block';
+            apiKeyInput.focus();
+        }
+        
+        function hideApiKeyModal() {
+            apiKeyModal.style.display = 'none';
+            apiKeyInput.value = '';
+        }
+        
+        // Check for API key on page load
+        window.addEventListener('load', () => {
+            if (!getApiKey()) {
+                showApiKeyModal();
+            }
+        });
+        
+        // API Key modal event listeners
+        saveApiKeyButton.addEventListener('click', () => {
+            const key = apiKeyInput.value.trim();
+            if (key) {
+                setApiKey(key);
+                hideApiKeyModal();
+            } else {
+                alert('API 키를 입력해주세요.');
+            }
+        });
+        
+        cancelApiKeyButton.addEventListener('click', hideApiKeyModal);
+        
+        // Close modal when clicking outside
+        apiKeyModal.addEventListener('click', (e) => {
+            if (e.target === apiKeyModal) {
+                hideApiKeyModal();
+            }
+        });
+        
+        // Enter key to save API key
+        apiKeyInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                saveApiKeyButton.click();
+            }
+        });
+
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+
+        // 캔버스 크기를 화면 전체에 맞게 조정
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            // 캔버스 크기 변경 시 배경색 다시 칠하기
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        window.addEventListener('load', () => {
+            resizeCanvas();
+        });
+
+        window.addEventListener('resize', () => {
+            resizeCanvas();
+        });
+
+        // 드로잉 시작
+        function startDrawing(e) {
+            isDrawing = true;
+            [lastX, lastY] = getCoordinates(e);
+        }
+
+        // 그리기
+        function draw(e) {
+            if (!isDrawing) return;
+
+            e.preventDefault();
+
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(...getCoordinates(e));
+            ctx.strokeStyle = "#000000"; // Black pencil color
+            ctx.lineWidth = 7.5; // Pen width reduced by half
+            ctx.lineCap = 'round';
+            ctx.stroke();
+            [lastX, lastY] = getCoordinates(e);
+        }
+
+        // 드로잉 종료
+        function stopDrawing() {
+            isDrawing = false;
+        }
+
+        // 터치 및 마우스 좌표 가져오기
+        function getCoordinates(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            
+            if (e.touches && e.touches.length > 0) {
+                const x = (e.touches[0].clientX - rect.left) * scaleX;
+                const y = (e.touches[0].clientY - rect.top) * scaleY;
+                return [x, y];
+            } else {
+                const x = (e.clientX - rect.left) * scaleX;
+                const y = (e.clientY - rect.top) * scaleY;
+                return [x, y];
+            }
+        }
+
+        // 이벤트 리스너
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+
+        canvas.addEventListener('touchstart', startDrawing);
+        canvas.addEventListener('touchmove', draw);
+        canvas.addEventListener('touchend', stopDrawing);
+
+        clearButton.addEventListener('click', () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // After clearing, re-fill the canvas with the background color
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            predictionTextElement.textContent = "그림을 그리면 AI가 예측해요!";
+        });
+
+        aiButton.addEventListener('click', async () => {
+            await createDrawingFromAI();
+        });
+
+        rankingButton.addEventListener('click', () => {
+            window.location.href = '/';
+        });
+        
+        clearApiButton.addEventListener('click', () => {
+            clearApiKey();
+        });
+
+        uploadButton.addEventListener('click', async () => {
+            // Check if canvas is blank
+            if (isCanvasBlank(canvas)) {
+                alert('캔버스에 그림을 그린 후 업로드해 주세요.');
+                return;
+            }
+            
+            try {
+                // Get the data URL of the canvas
+                const dataURL = canvas.toDataURL('image/png');
+                
+                // Convert data URL to blob
+                const response = await fetch(dataURL);
+                const blob = await response.blob();
+                
+                // Create FormData for upload
+                const formData = new FormData();
+                formData.append('image', blob, 'drawing.png');
+                formData.append('description', 'AI Canvas Drawing');
+                
+                // Show loading indicator
+                loaderElement.style.display = 'block';
+                
+                // Upload to server
+                const uploadResponse = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await uploadResponse.json();
+                
+                if (uploadResponse.ok) {
+                    alert(`업로드 성공! UUID: ${result.uuid}`);
+                } else {
+                    alert(`업로드 실패: ${result.error}`);
+                }
+                
+            } catch (error) {
+                console.error('업로드 오류:', error);
+                alert('업로드 중 오류가 발생했습니다.');
+            } finally {
+                loaderElement.style.display = 'none';
+            }
+        });
+
+        // Gemini API를 사용한 그림 예측 기능
+        async function predictDrawing() {
+            const apiKey = getApiKey();
+            if (!apiKey) {
+                showApiKeyModal();
+                return;
+            }
+            
+            const base64Image = canvas.toDataURL('image/png');
+            const base64Data = base64Image.split(',')[1];
+            
+            // 캔버스가 비어있으면 예측하지 않음
+            if (isCanvasBlank(canvas)) {
+                predictionTextElement.textContent = "그림을 그리면 AI가 예측해요!";
+                return;
+            }
+
+            try {
+                // AI 예측에 대한 프롬프트 수정: 여러 개의 사물을 말하고, 애매한 경우 질문하도록 변경
+                const userPrompt = "이 그림이 무엇인지 예측해서 가장 가능성이 높은 사물들을 콤마로 구분해서 여러 개 말해줘. 예를 들어, '강아지, 고양이' 처럼. 만약 한 단어로 예측하기 어렵다면, '이것은 [예측1], [예측2]일까요?' 와 같이 질문하는 형식으로 대답해줘.";
+                
+                const payload = {
+                    contents: [
+                        {
+                            role: "user",
+                            parts: [
+                                { text: userPrompt },
+                                { inlineData: { mimeType: "image/png", data: base64Data } }
+                            ]
+                        }
+                    ],
+                };
+                
+                // API 키를 URL에 포함
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                
+                let response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                const prediction = result.candidates?.[0]?.content?.parts?.[0]?.text || "알 수 없음";
+
+                predictionTextElement.textContent = prediction;
+
+            } catch (error) {
+                console.error("그림 예측 오류:", error);
+                predictionTextElement.textContent = "알 수 없음";
+            }
+        }
+
+        // Gemini API를 사용한 애니메이션 스타일 이미지 생성
+        async function createDrawingFromAI() {
+            const apiKey = getApiKey();
+            if (!apiKey) {
+                showApiKeyModal();
+                return;
+            }
+            
+            const base64Image = canvas.toDataURL('image/png');
+            const base64Data = base64Image.split(',')[1];
+            
+            // 캔버스가 비어있으면 동작하지 않음
+            if (isCanvasBlank(canvas)) {
+                alert('캔버스에 그림을 그린 후 다시 시도해 주세요.');
+                return;
+            }
+            
+            loaderElement.style.display = 'block';
+
+            try {
+                // 프롬프트 수정: 애니메이션 스타일에서 실사 사진 스타일로 변경
+                const userPrompt = "Transform this sketch into a photorealistic drawing. Add realistic lighting, shadows, and textures. The background should be a natural setting that matches the subject.";
+                
+                const payload = {
+                    contents: [
+                        {
+                            role: "user",
+                            parts: [
+                                { text: userPrompt },
+                                { inlineData: { mimeType: "image/png", data: base64Data } }
+                            ]
+                        }
+                    ],
+                    generationConfig: {
+                      responseModalities: ["TEXT", "IMAGE"]
+                    }
+                };
+                
+                // API 키를 URL에 포함
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
+                
+                let response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                // 이미지 데이터를 가진 파트를 찾도록 수정
+                const result = await response.json();
+                const base64DataFromAI = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+
+                if (base64DataFromAI) {
+                    const img = new Image();
+                    img.src = `data:image/png;base64,${base64DataFromAI}`;
+                    img.onload = () => {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        loaderElement.style.display = 'none';
+                    };
+                } else {
+                    console.error("AI가 이미지를 생성하지 못했습니다.");
+                    alert("AI가 이미지를 생성하지 못했습니다. 다시 시도해 주세요.");
+                    loaderElement.style.display = 'none';
+                }
+
+            } catch (error) {
+                console.error("그림 생성 오류:", error);
+                alert("그림 생성 중 오류가 발생했습니다. 다시 시도해 주세요.");
+                loaderElement.style.display = 'none';
+                
+            }
+        }
+
+        // 캔버스 비어있는지 확인하는 함수
+        function isCanvasBlank(canvas) {
+            const pixelBuffer = new Uint32Array(ctx.getImageData(0, 0, canvas.width, canvas.height).data.buffer);
+            return !pixelBuffer.some(color => color !== 0xFFFFFFFF && color !== 0);
+        }
+
+        // 10초마다 AI 호출
+        setInterval(predictDrawing, 7000);
+
+    </script>
+</body>
+</html>

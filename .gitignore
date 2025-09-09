@@ -52,3 +52,7 @@ temp/
 .venv/
 venv/
 env/
+
+*.ipynb
+*.png
+

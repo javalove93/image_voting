@@ -123,6 +123,10 @@ TEAM_SHEET_RANGE = "A2:Z999"  # The first row is comment that should be skipped
 def index():
     return render_template('index.html')
 
+@app.route('/ai_canvas')
+def ai_canvas():
+    return render_template('ai_canvas.html')
+
 def _get_image_data_and_description(uuid_only: str, original_file_extension: str, bucket: storage.Bucket):
     """
     Helper function to retrieve image data and description, with caching logic.
@@ -846,7 +850,7 @@ if __name__ == '__main__':
     # Development server configuration
     app.run(
         host='0.0.0.0',  # Allow external connections
-        port=5000,       # Default Flask port
+        port=8081,       # Default Flask port
         debug=True,      # Enable debug mode for development
         threaded=True    # Enable threading for concurrent requests
     )

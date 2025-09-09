@@ -7,3 +7,5 @@ google-api-python-client
 oauth2client
 google-auth
 python-dotenv
+google
+google.genai
